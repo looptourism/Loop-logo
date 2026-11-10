@@ -1,0 +1,6 @@
+node_modules/
+build_cache/
+__pycache__/
+# third-party skill, 19 MB: restore with `npx skills add Leonxlnx/cinetic` (pinned in skills-lock.json)
+.agents/
+.claude/skills/
