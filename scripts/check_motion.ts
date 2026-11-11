@@ -2,7 +2,7 @@
 import { LAYOUTS } from '../src/layouts';
 import {
   BALL_R, LEFT, LOCKUP_H, LOCKUP_W, LOOP_LEN, RIGHT, blurSamples, camera, carDistance, carPose, loopPoint, morph,
-  racket, soccerBall, tennisBall, trackDrawn,
+  planePose, racket, soccerBall, tennisBall, trackDrawn,
 } from '../src/motion';
 import T from '../src/timeline.json';
 
@@ -52,6 +52,20 @@ ok(kink < 0.03, `car never snaps its heading (largest turn in a tenth of a frame
 ok([5.5, 6.0, 6.9].every((t) => blurSamples(t) === 1), 'the hold needs no motion blur');
 
 for (const L of LAYOUTS) {
+  // the aeroplane: continuous, and still fully in frame beside the lockup on the last frame
+  let hop = 0;
+  for (let t = T.plane.in + STEP; t < T.duration; t += STEP) {
+    const p = planePose(L, t);
+    const q = planePose(L, t + STEP);
+    hop = Math.max(hop, Math.hypot(q.x - p.x, q.z - p.z));
+  }
+  ok(hop < 16, `${L.id}: aeroplane never jumps (largest step ${hop.toFixed(1)} units)`);
+  const pe = planePose(L, T.duration);
+  const halfW = LOCKUP_W / L.lockupFrac / 2;
+  const halfH = halfW * (L.h / L.w);
+  const reach = 370 * pe.scale;
+  ok(Math.abs(pe.x - LOCKUP_W / 2) + reach < halfW && Math.abs(pe.z - LOCKUP_H / 2) + reach < halfH, `${L.id}: aeroplane is fully in frame on the last frame`);
+  ok(pe.z + reach < 0 || pe.x - reach > LOCKUP_W, `${L.id}: aeroplane ends clear of the lockup`);
   const end = camera(L, T.duration);
   ok(Math.abs(end.position[0] - LOCKUP_W / 2) < 0.01 && Math.abs(end.position[2] - LOCKUP_H / 2) < 0.01, `${L.id}: camera ends straight above the centre of the lockup`);
   let cam = 0;

@@ -2,6 +2,7 @@
 // World: x and z are the wordmark art's pixel axes (the lockup lies flat on
 // the floor, 1725 units wide), y is up.
 import A from './assets.json';
+import SH from './shapes.json';
 import S from './stencils.json';
 import T from './timeline.json';
 import type { Layout } from './layouts';
@@ -27,6 +28,8 @@ export const CY = (S.loop.left.cy + S.loop.right.cy) / 2;
 export const LEFT = { x: S.loop.left.cx, z: CY };
 export const RIGHT = { x: S.loop.right.cx, z: CY };
 export const BALL_R = RING_R - RING_T / 2 - 16; // a ball sits inside a ring with a little air
+/** each globe fills its ring: the land reaches the infinity sign, as in the logo */
+export const GLOBE_R = { left: SH.globeR.left, right: SH.globeR.right };
 export const SLAB = 26; // thickness of the track and the letters
 
 // The car's route: in along the floor, once round the infinity sign, out again.
@@ -177,6 +180,37 @@ export const morph = (t: number) => ease.inOutCubic(prog(t, T.morph[0], T.morph[
 export const lettersUp = (t: number) => ease.outCubic(prog(t, T.letters[0], T.letters[1]));
 export const taglineIn = (t: number) => ease.inOutSine(prog(t, T.tagline[0], T.tagline[1]));
 
+// -------------------------------------------------------------- aeroplane
+// Sweeps in low from the bottom left as the logo forms, climbs away over the
+// corner of the lockup and settles into a slow cruise beside it.
+export const PLANE_ALT = 600;
+export const planePose = (L: Layout, t: number) => {
+  const end = L.plane;
+  const start = { x: end.x - 3900, z: end.z + 1650 };
+  const ctrl = { x: end.x - 1595, z: end.z + 1100 };
+  const k = ease.outCubic(prog(t, T.plane.in, T.plane.settle)); // arrives fast, eases into the cruise
+  const a = (1 - k) * (1 - k);
+  const b = 2 * (1 - k) * k;
+  const c = k * k;
+  let hx = 2 * (1 - k) * (ctrl.x - start.x) + 2 * k * (end.x - ctrl.x);
+  let hz = 2 * (1 - k) * (ctrl.z - start.z) + 2 * k * (end.z - ctrl.z);
+  const len = Math.hypot(hx, hz);
+  hx /= len;
+  hz /= len;
+  const cruise = 12 * Math.max(0, t - T.plane.in); // never quite stops: it is flying
+  const ex = (end.x - ctrl.x) / Math.hypot(end.x - ctrl.x, end.z - ctrl.z);
+  const ez = (end.z - ctrl.z) / Math.hypot(end.x - ctrl.x, end.z - ctrl.z);
+  return {
+    x: a * start.x + b * ctrl.x + c * end.x + ex * cruise,
+    z: a * start.z + b * ctrl.z + c * end.z + ez * cruise,
+    y: PLANE_ALT * (0.82 + 0.18 * k),
+    yaw: Math.atan2(-hz, hx),
+    bank: -0.42 * (1 - k) * (1 - k), // leans into the turn, levels out
+    scale: end.scale,
+    visible: t > T.plane.in,
+  };
+};
+
 // ----------------------------------------------------------------- camera
 const VFOV = 26;
 const keys = (t: number, ks: [number, number][]) => {
@@ -230,6 +264,6 @@ export const blurSamples = (t: number) => {
   const b1 = tennisBall(t + dt);
   const ball = Math.max(Math.hypot(s1.x - s0.x, s1.y - s0.y, s1.z - s0.z), Math.hypot(b1.x - b0.x, b1.y - b0.y, b1.z - b0.z)) / (2 * dt);
   const cam = t > T.rise[0] - 0.2 && t < T.rise[1] ? 3 : 1;
-  const speed = Math.max(carSpeed, r * 12, ball); // world units per second
+  const speed = Math.max(carSpeed, r * 12, ball, t > T.plane.in && t < T.plane.settle - 0.7 ? 2200 : 0); // world units per second
   return Math.max(cam, Math.min(8, Math.ceil(speed / 520)));
 };

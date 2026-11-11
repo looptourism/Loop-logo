@@ -5,7 +5,7 @@ scratch (no samples, nothing licensed) and locked to src/timeline.json.
   score    D major at the timeline's tempo: a soft mallet line over a warm
            pad, D -> G -> A, resolving to D exactly as the logo is revealed.
   effects  soccer bounces, racket swish + hit, tennis bounces, the car
-           lapping the loop and leaving: each on the frame the picture shows it.
+           lapping the loop and leaving, the aeroplane sweeping in: each on the frame the picture shows it.
   master   -16 LUFS integrated, true peak below -1.5 dBTP, 48 kHz stereo.
 
 Writes public/audio/loop_sting.wav and the two stems to out/stems/.
@@ -212,6 +212,12 @@ def effects():
     for at, g in zip(tn['bounces'], (0.4, 0.2)):
         place(e, ball_bounce(520, 260, 0.03, 0.5, 0.14, 2500), at, pan=0.25, gain=g)
     place(e, road_draw(T['car']['offLoop'] - T['car']['onLoop']), T['car']['onLoop'], pan=0.0, gain=0.05)
+    # the aeroplane: a soft rush of air sweeping in and settling
+    pl = T['plane']
+    n = int((pl['settle'] - pl['in']) * SR)
+    tt = np.arange(n) / n
+    jet = bandpass(rng.standard_normal(n), 250, 2600) * np.sin(np.pi * tt ** 0.6) ** 2
+    place(e, fade(jet, 0.05, 0.2), pl['in'], pan=0.2, gain=0.09)
     dry = e.copy()
     return dry + 0.35 * (reverb(e, 0.5, 0.6) - e)
 

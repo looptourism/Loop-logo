@@ -8,6 +8,7 @@
   "rise": [3.25, 4.05],
   "morph": [3.45, 4.1],
   "letters": [3.6, 4.15],
+  "plane": { "in": 3.3, "settle": 5.1 },
   "tagline": [4.15, 4.8],
   "resolve": 4.0,
   "hold": [4.8, 7.0]

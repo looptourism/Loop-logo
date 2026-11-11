@@ -14,27 +14,34 @@ All three are 7.00 s, 60 fps, H.264 (yuv420p, BT.709) with AAC stereo 48 kHz. Ea
 
 ## The idea
 
-**Sport builds the logo, in 3D.** The lockup lies flat on a cream floor like a race track, and the film is one continuous camera move that ends looking straight down at the finished logo:
+**Sport and travel build the logo, in 3D.** The lockup lies flat on a cream floor like a race track, and the film is one continuous camera move that ends looking straight down at the finished logo:
 
 | Time | What happens |
 |---|---|
 | 0.0–1.8 s | A football drops in, bounces on the beat with a little squash, and rolls to rest |
 | 0.55–1.95 s | A tennis ball drops in; an oversized racket sweeps through and serves it. It bounces and rolls to rest beside the football |
-| 1.85–3.9 s | A red racing car arrives, laps the infinity loop once and lays the road down behind it, lane markings and all, then sprints away |
+| 1.85–3.9 s | A red racing car arrives, laps the infinity loop once and lays the road down behind it, then sprints away |
 | 3.25–4.05 s | The camera rises to look straight down |
-| 3.45–4.15 s | The two balls spin and become the two globes of the logo; the letters L and P rise out of the floor |
+| 3.3–5.1 s | An aeroplane sweeps in low from the bottom left, climbs away over the corner of the lockup and settles into a slow cruise beside it |
+| 3.45–4.15 s | The two balls spin, swell to fill their rings and become the two globes of the logo; the road settles and the wordmark itself rises in its place |
 | 4.15–4.8 s | "Travel & Tourism" comes in |
-| 4.8–7.0 s | Hold on the lockup (2.2 s), with a slow push that comes to rest on the last frame |
+| 4.8–7.0 s | Hold on the lockup (2.2 s), with a slow push that comes to rest on the last frame; the aeroplane keeps drifting |
 
-Real geometry, real light and shadow (Three.js inside Remotion): the balls, globes, track, letters, car and racket are all 3D objects. Colour comes from the objects themselves: a classic black-and-white football, an optic-yellow tennis ball, blue-and-green globes, a red car, an orange racket, on cream `#FFEEC0` with the wordmark in its own dark ink.
+Real geometry, light and shadow (Three.js inside Remotion). The light is even and comes from almost straight above, so colours read as they are and nothing bleaches.
 
-**What I designed myself, beyond your files:** the football and tennis ball (generated), the car and the racket (built from simple solids, toy-like on purpose), the lane markings, the lighting, and the camera move. **What is still yours:** the continents on the globes are your logo's own drawings wrapped onto spheres, the L and P are traced from your wordmark, the loop follows your logo's measured rings, and the tagline is your lettering.
+**The ending is your logo, not a version of it.** Seen from above, the wordmark is the traced outline of your own art, including the infinity sign's over-and-under crossing, and each globe carries exactly what your logo has inside its ring, in your logo's two tones, with the land running right up to the infinity sign. Nothing in the mark is recoloured.
 
-Two honest caveats about the ending. The loop in the film is a clean ribbon, so where the two strokes cross it does not reproduce the small "over-under" gap your flat logo has. And the globes are coloured; your flat logo is one colour. If the lockup has to end as the exact brand mark, say so and I will cross-fade to the flat logo for the hold.
+**What I designed myself, beyond your files:** the football and tennis ball (generated), the car, the racket and the aeroplane (built from simple solids, toy-like on purpose), the lane markings, the lighting, and the camera move.
 
-This replaces the two earlier 2D versions. Your supplied prop pictures are no longer used in the film at all, which also removes the watermark and trademark problems listed below.
+**The aeroplane** has the general shape of a large four-engine double-decker but carries no airline name, logo or colours. Putting a real airline's livery on it (Emirates was asked about) needs that airline's permission, because it would read as a partnership; with that permission and their official artwork it is a small change.
 
-**Sound** is original and synthesised from scratch by `scripts/make_audio.py` (nothing sampled or licensed): a short D-major mallet-and-pad score at 120 BPM that resolves at 4.0 s as the logo forms, with ball bounces, the racket hit and the car's lap placed on the frames where they happen.
+This replaces the earlier versions. Your supplied prop pictures are not used in the film, which also removes the watermark and trademark problems listed below.
+
+**Sound** is original and synthesised from scratch by `scripts/make_audio.py` (nothing sampled or licensed): a short D-major mallet-and-pad score at 120 BPM that resolves at 4.0 s as the logo forms, with ball bounces, the racket hit, the car's lap and the aeroplane's pass placed on the frames where they happen.
+
+## Blender test
+
+`blender/scene.py` builds the same lockup in Blender (Cycles) and renders it headless; `out/blender/lockup_16x9.png` is a single test frame from it. It gives softer light and truer materials than the web renderer, but a 1080p frame takes about three minutes here without a GPU, so the film itself is rendered with Three.js. On a machine with a GPU the Blender route becomes practical.
 
 ## Your source files
 
@@ -58,6 +65,7 @@ Automatic checks (`npm run check`), all passing:
 - the car does exactly one lap; the loop closes on itself and is complete once the car leaves it; the car never snaps its heading
 - the beats are staggered: football, serve, car, transformation
 - the globes are in place and the car has gone before the lockup is complete
+- the aeroplane never jumps, is fully in frame on the last frame, and ends clear of the lockup (every format)
 - the full lockup with tagline holds at least 1.5 s, and the hold needs no motion blur
 - no pops: nothing jumps between adjacent tenth-of-a-frame samples
 - in every format the camera never jumps and ends straight above the centre of the lockup
@@ -66,11 +74,11 @@ Measured on the delivered files:
 
 | File | Picture | Frames | Duration | Loudness | True peak |
 |---|---|---|---|---|---|
-| `loop_16x9.mp4` | 1920×1080, 60 fps | 420 | 7.000 s | −16.0 LUFS | −2.6 dBTP |
-| `loop_9x16.mp4` | 1080×1920, 60 fps | 420 | 7.000 s | −16.0 LUFS | −2.6 dBTP |
-| `loop_1x1.mp4` | 1080×1080, 60 fps | 420 | 7.000 s | −16.0 LUFS | −2.6 dBTP |
+| `loop_16x9.mp4` | 1920×1080, 60 fps | 420 | 7.000 s | −16.0 LUFS | −2.7 dBTP |
+| `loop_9x16.mp4` | 1080×1920, 60 fps | 420 | 7.000 s | −16.0 LUFS | −2.7 dBTP |
+| `loop_1x1.mp4` | 1080×1080, 60 fps | 420 | 7.000 s | −16.0 LUFS | −2.7 dBTP |
 
-Checked by eye: all 42 stills in `out/frames/` (14 beats × 3 formats). They are the exact frames that were encoded, saved losslessly before compression. The cream is exactly `#FFEEC0` in the corners of every one.
+Checked by eye: all 42 stills in `out/frames/` (14 beats × 3 formats). They are the exact frames that were encoded, saved losslessly before compression. The cream is exactly `#FFEEC0` in the corner of every one.
 
 **Not tested:** I cannot hear audio, so the sound was checked by measurement only (loudness, peak, event timing), not by listening. Please listen once before publishing. The films were not test-uploaded to Instagram. Rendering here uses software WebGL (no GPU), which is slower but gives the same picture.
 

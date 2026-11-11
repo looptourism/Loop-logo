@@ -102,58 +102,70 @@ def tennis():
 
 
 # ------------------------------------------------------------------ globes
-def globe(side, name):
-    a = np.asarray(Image.open(os.path.join(OUT, 'wordmark.png')))[..., 3] / 255.0
+# The globes are the logo's own drawing, unchanged: everything the wordmark
+# has inside each ring (the continents, right up to where they touch the
+# infinity sign) in the logo's two tones, dropped straight down onto a sphere
+# that fills the ring.
+CREAM, INK = '#FFEEC0', '#1B1B1B'
+
+
+def globe_radius(side):
+    ring = S['loop'][side]
+    return ring['r'] - ring['thick'] / 2 + 3           # reaches just under the ring: no gap
+
+
+def globe(side):
+    a = ndi.gaussian_filter(np.asarray(Image.open(os.path.join(OUT, 'wordmark.png')))[..., 3] / 255.0, 0.7)
     ring = S['loop'][side]
     cx, cy = ring['cx'], (S['loop']['left']['cy'] + S['loop']['right']['cy']) / 2
-    rg = ring['r'] - ring['thick'] / 2 - 2             # the disc inside the ring
-    # seen from straight above: screen right = +x, screen down = +z; both hemispheres carry the drawing
-    px = cx + D[..., 0] * rg
-    py = cy + D[..., 2] * rg
-    land = ndi.map_coordinates(ndi.gaussian_filter(a, 0.8), [py, px], order=1, mode='nearest')
-    r = np.hypot(D[..., 0], D[..., 2])
-    land = np.clip((land - 0.5) * 6 + 0.5, 0, 1) * smooth(r, 0.93, 0.02)    # keep the ring itself out
-    ocean, green = hex3('#2F7FD0'), hex3('#63BE6A')
-    save(name, mix(np.broadcast_to(ocean, D.shape).copy(), green, land))
+    rg = globe_radius(side)
+
+    def paint(px, py):
+        land = ndi.map_coordinates(a, [py, px], order=1, mode='nearest')
+        land = np.clip((land - 0.5) * 6 + 0.5, 0, 1)
+        return mix(np.broadcast_to(hex3(CREAM), land.shape + (3,)).copy(), hex3(INK), land)
+
+    # sphere map for the web scene; seen from straight above: right = +x, down = +z
+    save(f'tex_globe_{side}.png', paint(cx + D[..., 0] * rg, cy + D[..., 2] * rg))
+    # flat top view for the Blender scene
+    n = 1024
+    vv, uu = np.mgrid[0:n, 0:n]
+    save(f'globe_{side}_top.png', paint(cx + ((uu + 0.5) / n * 2 - 1) * rg, cy + ((vv + 0.5) / n * 2 - 1) * rg))
 
 
-# ------------------------------------------------------------------ letters
-def letters():
+# -------------------------------------------------------------------- mark
+def mark():
+    """The whole wordmark as extrudable outlines, exactly as drawn (the infinity
+    sign keeps its over-and-under crossing), minus the two discs the globes fill."""
+    from shapely.geometry import Point
     a = np.asarray(Image.open(os.path.join(OUT, 'wordmark.png')))[..., 3] > 128
-    h, w = a.shape
-    yy, xx = np.mgrid[0:h, 0:w]
-    L, R = S['loop']['left'], S['loop']['right']
-    outer = L['r'] + L['thick'] / 2 + 3
-    masks = {
-        'L': a & (xx < 362) & (np.hypot(xx - L['cx'], yy - L['cy']) > outer),
-        'P': a & (xx > R['cx'] + R['r'] + R['thick'] / 2 + 6),
-    }
-    out = {}
-    for key, m in masks.items():
-        lab, n = ndi.label(m)
-        m = lab == (1 + int(np.argmax(ndi.sum(m, lab, range(1, n + 1)))))       # the letter, not specks
-        polys = []
-        for curve in potrace.Bitmap(~m).trace(turdsize=20, alphamax=1.0, opttolerance=0.5):
-            pts = [(curve.start_point.x, curve.start_point.y)]
-            for s in curve.segments:
-                p0 = np.array(pts[-1])
-                if s.is_corner:
-                    pts += [(s.c.x, s.c.y), (s.end_point.x, s.end_point.y)]
-                else:
-                    c1, c2, e = (np.array([q.x, q.y]) for q in (s.c1, s.c2, s.end_point))
-                    for t in np.linspace(0, 1, 9)[1:]:
-                        pts.append(tuple((1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * c1 + 3 * (1 - t) * t ** 2 * c2 + t ** 3 * e))
+    polys = []
+    for curve in potrace.Bitmap(~a).trace(turdsize=12, alphamax=1.0, opttolerance=0.4):
+        pts = [(curve.start_point.x, curve.start_point.y)]
+        for s in curve.segments:
+            p0 = np.array(pts[-1])
+            if s.is_corner:
+                pts += [(s.c.x, s.c.y), (s.end_point.x, s.end_point.y)]
+            else:
+                c1, c2, e = (np.array([q.x, q.y]) for q in (s.c1, s.c2, s.end_point))
+                for t in np.linspace(0, 1, 9)[1:]:
+                    pts.append(tuple((1 - t) ** 3 * p0 + 3 * (1 - t) ** 2 * t * c1 + 3 * (1 - t) * t ** 2 * c2 + t ** 3 * e))
+        if len(pts) >= 4:
             polys.append(Polygon(pts).buffer(0))
-        polys.sort(key=lambda g: -g.area)
-        shape = polys[0]
-        for g in polys[1:]:
-            shape = shape.symmetric_difference(g)
-        shape = shape.buffer(0).simplify(0.5)
-        geoms = getattr(shape, 'geoms', [shape])
-        out[key] = [dict(outer=[[round(x, 2), round(y, 2)] for x, y in g.exterior.coords],
-                         holes=[[[round(x, 2), round(y, 2)] for x, y in r.coords] for r in g.interiors]) for g in geoms]
+    polys.sort(key=lambda g: -g.area)
+    shape = polys[0]
+    for g in polys[1:]:
+        shape = shape.symmetric_difference(g)
+    cy = (S['loop']['left']['cy'] + S['loop']['right']['cy']) / 2
+    for side in ('left', 'right'):
+        shape = shape.difference(Point(S['loop'][side]['cx'], cy).buffer(globe_radius(side) - 3, 96))
+    shape = shape.buffer(0).simplify(0.4)
+    geoms = [g for g in getattr(shape, 'geoms', [shape]) if g.area > 60]
+    out = dict(MARK=[dict(outer=[[round(x, 2), round(y, 2)] for x, y in g.exterior.coords],
+                          holes=[[[round(x, 2), round(y, 2)] for x, y in r.coords] for r in g.interiors]) for g in geoms],
+               globeR=dict(left=globe_radius('left'), right=globe_radius('right')))
     json.dump(out, open(os.path.join(ROOT, 'src', 'shapes.json'), 'w'))
-    print({k: [(len(p['outer']), len(p['holes'])) for p in v] for k, v in out.items()})
+    print('mark pieces', [(len(p['outer']), len(p['holes'])) for p in out['MARK']], out['globeR'])
 
 
-football(); tennis(); globe('left', 'tex_globe_left.png'); globe('right', 'tex_globe_right.png'); letters()
+football(); tennis(); globe('left'); globe('right'); mark()

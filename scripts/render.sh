@@ -11,8 +11,8 @@ mkdir -p out/frames build_cache
 npx remotion bundle src/index.ts --out-dir build_cache/bundle --log=error
 # one still per beat, name:frame at 60 fps
 BEATS="01_football_drops_in:27 02_first_bounce:33 03_serve:60 04_tennis_bounce:80 05_balls_at_rest:112 \
-06_car_arrives:128 07_car_lays_the_loop:160 08_car_on_far_ring:185 09_camera_rises:204 10_balls_become_globes:222 \
-11_letters_rise:236 12_tagline:265 13_hold:330 14_last_frame:419"
+06_car_arrives:128 07_car_lays_the_loop:160 08_car_on_far_ring:185 09_camera_rises:204 10_balls_become_globes:228 \
+11_plane_sweeps_over:246 12_tagline:270 13_hold:345 14_last_frame:419"
 for id in ${@:-16x9 9x16 1x1}; do
   rm -rf "build_cache/sub_$id"
   npx tsx scripts/plan.ts "$id" "build_cache/plan_$id.json"

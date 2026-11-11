@@ -8,13 +8,13 @@ import SHAPES from './shapes.json';
 import T from './timeline.json';
 import type { Layout } from './layouts';
 import {
-  BALL_R, CY, HIT, LEFT, LOOP_LEN, RIGHT, RING_T, SLAB, blurSamples, camera, carPose, lettersUp, loopPoint, morph,
-  prog, racket, soccerBall, taglineIn, tennisBall, trackDrawn,
+  BALL_R, CY, GLOBE_R, HIT, LEFT, LOOP_LEN, RIGHT, RING_T, SLAB, blurSamples, camera, carPose, lettersUp, loopPoint, morph,
+  planePose, prog, racket, soccerBall, taglineIn, tennisBall, trackDrawn,
 } from './motion';
 import type { Ball } from './motion';
 
 export const CREAM = '#FFEEC0';
-const INK = '#222120';
+const INK = '#1B1B1B';
 const RED = '#E5352B';
 
 // ------------------------------------------------------------- textures
@@ -60,7 +60,7 @@ const Camera: React.FC<{ L: Layout; t: number }> = ({ L, t }) => {
 
 // ---------------------------------------------------------------- balls
 /** A sphere that is one thing (a ball) and turns into another (a globe). */
-const Sphere: React.FC<{ b: Ball; from: THREE.Texture; to: THREE.Texture; k: number; rough: number }> = ({ b, from, to, k, rough }) => {
+const Sphere: React.FC<{ b: Ball; from: THREE.Texture; to: THREE.Texture; k: number; rough: number; globeR: number }> = ({ b, from, to, k, rough, globeR }) => {
   const mixU = useMemo(() => ({ value: 0 }), []);
   mixU.value = k;
   const material = useMemo(() => {
@@ -70,7 +70,9 @@ const Sphere: React.FC<{ b: Ball; from: THREE.Texture; to: THREE.Texture; k: num
       shader.uniforms.mixK = mixU;
       shader.fragmentShader = shader.fragmentShader
         .replace('void main() {', 'uniform sampler2D map2;\nuniform float mixK;\nvoid main() {')
-        .replace('#include <map_fragment>', 'diffuseColor *= mix(texture2D(map, vMapUv), texture2D(map2, vMapUv), mixK);');
+        .replace('#include <map_fragment>', 'vec4 globeTex = texture2D(map2, vMapUv);\ndiffuseColor *= mix(texture2D(map, vMapUv), globeTex, mixK);')
+        // as a globe it is the logo's flat drawing: its colours are shown as they are, barely shaded
+        .replace('#include <opaque_fragment>', '#include <opaque_fragment>\ngl_FragColor.rgb = mix(gl_FragColor.rgb, globeTex.rgb, mixK * 0.93);');
     };
     return m;
   }, [from, to, mixU, rough]);
@@ -80,9 +82,10 @@ const Sphere: React.FC<{ b: Ball; from: THREE.Texture; to: THREE.Texture; k: num
   q.slerp(new THREE.Quaternion(), k);
   q.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI * 4 * k));
   const sx = 1 + (1 - b.sy) * 0.6;
+  const grow = 1 + (globeR / BALL_R - 1) * k; // swells to fill its ring
   return (
-    <group position={[b.x, b.y, b.z]} scale={[sx, b.sy, sx]}>
-      <mesh quaternion={q} material={material} castShadow receiveShadow>
+    <group position={[b.x, b.y * grow, b.z]} scale={[sx * grow, b.sy * grow, sx * grow]}>
+      <mesh quaternion={q} material={material} castShadow={k < 0.5} receiveShadow={k < 0.5}>
         <sphereGeometry args={[BALL_R, 96, 64]} />
       </mesh>
     </group>
@@ -136,9 +139,10 @@ const Track: React.FC<{ t: number }> = ({ t }) => {
   track.setDrawRange(0, segs * 18);
   dashes.setDrawRange(0, segs * 6);
   const lane = 1 - prog(t, T.morph[0], T.morph[1]); // lane markings fade as the road becomes the logo
-  if (segs === 0) return null;
+  const sink = 1 - lettersUp(t); // the road settles into the floor as the logo itself rises through it
+  if (segs === 0 || sink <= 0) return null;
   return (
-    <>
+    <group scale={[1, Math.max(sink, 0.001), 1]}>
       <mesh geometry={track} castShadow receiveShadow>
         <meshStandardMaterial color={INK} roughness={0.85} side={THREE.DoubleSide} />
       </mesh>
@@ -147,16 +151,17 @@ const Track: React.FC<{ t: number }> = ({ t }) => {
           <meshBasicMaterial color={CREAM} transparent opacity={lane} side={THREE.DoubleSide} toneMapped={false} />
         </mesh>
       ) : null}
-    </>
+    </group>
   );
 };
 
-// -------------------------------------------------------------- letters
+// ----------------------------------------------------------------- mark
+// The wordmark exactly as drawn (traced from the logo), extruded.
 const useLetters = () =>
   useMemo(() => {
     const geoms: THREE.ExtrudeGeometry[] = [];
-    for (const polys of Object.values(SHAPES) as { outer: number[][]; holes: number[][][] }[][]) {
-      for (const p of polys) {
+    {
+      for (const p of SHAPES.MARK as { outer: number[][]; holes: number[][][] }[]) {
         const shape = new THREE.Shape(p.outer.map(([x, y]) => new THREE.Vector2(x, y)));
         for (const h of p.holes) shape.holes.push(new THREE.Path(h.map(([x, y]) => new THREE.Vector2(x, y))));
         geoms.push(new THREE.ExtrudeGeometry(shape, { depth: SLAB, bevelEnabled: false, curveSegments: 4 }));
@@ -243,6 +248,73 @@ const Car: React.FC<{ t: number }> = ({ t }) => {
   );
 };
 
+// ------------------------------------------------------------ aeroplane
+// A four-engine, double-deck airliner in plain white: no airline livery or
+// markings. Built from simple solids, nose along +x, about 620 units long.
+const useWing = (root: number, tip: number, span: number, sweep: number, thick: number) =>
+  useMemo(() => {
+    const shape = new THREE.Shape([
+      new THREE.Vector2(0, 0), new THREE.Vector2(-sweep, span), new THREE.Vector2(-sweep - tip, span), new THREE.Vector2(-root, 0),
+    ]);
+    const g = new THREE.ExtrudeGeometry(shape, { depth: thick, bevelEnabled: true, bevelSize: thick * 0.3, bevelThickness: thick * 0.3, bevelSegments: 2 });
+    g.translate(0, 0, -thick / 2);
+    return g;
+  }, [root, tip, span, sweep, thick]);
+
+const Plane: React.FC<{ L: Layout; t: number }> = ({ L, t }) => {
+  const wing = useWing(175, 42, 335, 175, 12);
+  const stab = useWing(85, 30, 135, 75, 8);
+  const fin = useWing(125, 42, 150, 105, 10);
+  const p = planePose(L, t);
+  if (!p.visible) return null;
+  const white = <meshStandardMaterial color="#FAF8F2" roughness={0.35} />;
+  const grey = <meshStandardMaterial color="#B9B6AD" roughness={0.45} />;
+  const dark = <meshStandardMaterial color={INK} roughness={0.5} />;
+  // wing shapes are drawn in x (back) / y (out); laid flat: y -> +-z
+  const flat = (side: number): [number, number, number] => [side * (Math.PI / 2), 0, 0];
+  return (
+    <group position={[p.x, p.y, p.z]} rotation={[0, p.yaw, 0]} scale={p.scale}>
+      <group rotation={[p.bank, 0, 0.05]}>
+        <mesh rotation={[0, 0, -Math.PI / 2]} scale={[1.22, 1, 1]} castShadow>{/* double-deck body */}
+          <cylinderGeometry args={[40, 40, 330, 40]} />
+          {white}
+        </mesh>
+        <mesh position={[165, 0, 0]} scale={[1.75, 1.22, 1]} castShadow>
+          <sphereGeometry args={[40, 40, 24]} />
+          {white}
+        </mesh>
+        <mesh position={[-265, 10, 0]} rotation={[0, 0, Math.PI / 2]} scale={[1.22, 1, 1]} castShadow>
+          <cylinderGeometry args={[8, 40, 200, 40]} />
+          {white}
+        </mesh>
+        <mesh position={[196, 22, 0]} rotation={[0, 0, -0.55]}>
+          <boxGeometry args={[30, 10, 50]} />
+          {dark}
+        </mesh>
+        {[1, -1].map((side) => (
+          <React.Fragment key={side}>
+            <mesh geometry={wing} position={[80, -20, side * 25]} rotation={flat(side)} castShadow>{white}</mesh>
+            <mesh geometry={stab} position={[-260, 16, side * 10]} rotation={flat(side)} castShadow>{white}</mesh>
+            {[[115, 40], [215, -20]].map(([span, fwd]) => (
+              <React.Fragment key={span}>
+                <mesh position={[fwd, -44, side * span]} rotation={[0, 0, -Math.PI / 2]} castShadow>
+                  <cylinderGeometry args={[20, 20, 78, 24]} />
+                  {grey}
+                </mesh>
+                <mesh position={[fwd + 40, -44, side * span]} rotation={[0, 0, -Math.PI / 2]}>
+                  <cylinderGeometry args={[16, 16, 4, 24]} />
+                  {dark}
+                </mesh>
+              </React.Fragment>
+            ))}
+          </React.Fragment>
+        ))}
+        <mesh geometry={fin} position={[-225, 36, 0]} rotation={[0, 0, 0]} castShadow>{white}</mesh>
+      </group>
+    </group>
+  );
+};
+
 // --------------------------------------------------------------- racket
 const REACH = 780; // grip to the middle of the strings
 const CONTACT_DEG = 222; // at contact the head lies down-left of the grip
@@ -307,25 +379,27 @@ const World: React.FC<{ L: Layout; t: number; tex: Tex }> = ({ L, t, tex }) => {
     <>
       <Camera L={L} t={t} />
       <color attach="background" args={[CREAM]} />
-      <ambientLight intensity={1.5} />
+      {/* even light: colours stay as they are; one soft light from almost straight above for contact shadows */}
+      <ambientLight intensity={2.2} />
       <directionalLight
-        position={[-700, 3400, 1500]} intensity={2.1} castShadow
-        shadow-mapSize={[2048, 2048]} shadow-bias={-0.0004} shadow-normalBias={3}
-        shadow-camera-left={-2600} shadow-camera-right={3400} shadow-camera-top={2600} shadow-camera-bottom={-2600}
-        shadow-camera-near={100} shadow-camera-far={9000}
+        position={[500, 5200, 900]} intensity={1.25} castShadow
+        shadow-mapSize={[2048, 2048]} shadow-bias={-0.0004} shadow-normalBias={3} shadow-radius={6}
+        shadow-camera-left={-3600} shadow-camera-right={3600} shadow-camera-top={3200} shadow-camera-bottom={-3200}
+        shadow-camera-near={100} shadow-camera-far={12000}
       />
       {/* the floor is the cream itself; it only shows shadows */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[800, 0, 300]} receiveShadow>
         <planeGeometry args={[40000, 40000]} />
-        <shadowMaterial color="#5a4520" opacity={0.26} />
+        <shadowMaterial color="#5a4520" opacity={0.22} />
       </mesh>
 
       <Track t={t} />
       <Letters t={t} />
-      <Sphere b={soccerBall(t)} from={tex['tex_soccer.png']} to={tex['tex_globe_left.png']} k={k} rough={0.45} />
-      {tb.visible ? <Sphere b={tb} from={tex['tex_tennis.png']} to={tex['tex_globe_right.png']} k={k} rough={0.75 - 0.3 * k} /> : null}
+      <Sphere b={soccerBall(t)} from={tex['tex_soccer.png']} to={tex['tex_globe_left.png']} k={k} rough={0.45} globeR={GLOBE_R.left} />
+      {tb.visible ? <Sphere b={tb} from={tex['tex_tennis.png']} to={tex['tex_globe_right.png']} k={k} rough={0.75} globeR={GLOBE_R.right} /> : null}
       <Racket t={t} />
       <Car t={t} />
+      <Plane L={L} t={t} />
 
       {tag > 0 ? (
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[A.tagline.dx + A.tagline.w / 2, 1.2, A.tagline.dy + A.tagline.h / 2 + 14 * (1 - tag)]}>

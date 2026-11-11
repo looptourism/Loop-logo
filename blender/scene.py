@@ -4,7 +4,7 @@
   python3 blender/scene.py --shot lockup --out out/blender/lockup.png
   python3 blender/scene.py --shot action --out out/blender/action.png
 
-Needs `pip install bpy shapely pillow` and build_cache/geometry.json
+Needs `pip install bpy pillow` and build_cache/geometry.json
 (`npx tsx scripts/export_geometry.ts build_cache/geometry.json`).
 
 Everything is built here from the logo's measurements: letters and loop are
@@ -23,7 +23,6 @@ import sys
 import bpy
 from mathutils import Euler, Vector
 from PIL import Image
-from shapely.geometry import LineString
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ap = argparse.ArgumentParser()
@@ -76,7 +75,8 @@ def material(name, color=None, rough=0.5, coat=0.0, metal=0.0, image=None, proje
         if projected:                        # the drawing is dropped straight down onto the sphere
             co = nt.nodes.new('ShaderNodeTexCoord')
             mp = nt.nodes.new('ShaderNodeMapping')
-            mp.inputs['Scale'].default_value = (1 / (2 * R), 1 / (2 * R), 1)
+            rr = projected if isinstance(projected, float) else R
+            mp.inputs['Scale'].default_value = (1 / (2 * rr), 1 / (2 * rr), 1)
             mp.inputs['Location'].default_value = (0.5, 0.5, 0)
             nt.links.new(co.outputs['Object'], mp.inputs['Vector'])
             nt.links.new(mp.outputs['Vector'], tex.inputs['Vector'])
@@ -114,6 +114,7 @@ def extruded(name, polygons, mat, height=SLAB, bevel=0.018):
 
 
 def sphere(name, centre, mat, radius=R):
+    radius = radius if radius > 0 else R
     bpy.ops.mesh.primitive_uv_sphere_add(radius=radius, segments=96, ring_count=48, location=P(centre['x'], centre['z'], radius))
     ob = bpy.context.object
     ob.name = name
@@ -233,15 +234,13 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene
 ink = material('ink', '#141312', rough=0.75, spec=0.25)
 
-ring = LineString(G['centre']).buffer(G['RING_T'] / 2, 24).simplify(0.2)
-extruded('loop', [list(ring.exterior.coords)] + [list(i.coords) for i in ring.interiors], ink)
-for key, polys in SHAPES.items():
-    for i, p in enumerate(polys):
-        extruded(f'{key}{i}', [p['outer']] + p['holes'], ink)
+# the wordmark exactly as drawn (traced from the logo), minus the discs the globes fill
+for i, p in enumerate(SHAPES['MARK']):
+    extruded(f'mark{i}', [p['outer']] + p['holes'], ink)
 
 if args.shot == 'lockup':
-    sphere('globe left', G['LEFT'], material('globe left', rough=0.95, spec=0.0, image='globe_left_top.png', projected=True))
-    sphere('globe right', G['RIGHT'], material('globe right', rough=0.95, spec=0.0, image='globe_right_top.png', projected=True))
+    for side, c in (('left', G['LEFT']), ('right', G['RIGHT'])):          # each globe fills its ring: land meets the loop
+        sphere(f'globe {side}', c, material(f'globe {side}', rough=0.95, spec=0.0, image=f'globe_{side}_top.png', projected=SHAPES['globeR'][side] * U), radius=SHAPES['globeR'][side] * U)
 else:
     sphere('football', G['LEFT'], material('football', rough=0.38, coat=0.2, image='tex_soccer.png')).rotation_euler = (0.5, 0.3, 0.4)
     sphere('tennis ball', G['RIGHT'], material('tennis', rough=0.9, image='tex_tennis.png')).rotation_euler = (0.9, 0.2, 1.1)
