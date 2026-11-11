@@ -9,7 +9,8 @@ Needs `pip install bpy shapely pillow` and build_cache/geometry.json
 
 Everything is built here from the logo's measurements: letters and loop are
 extruded from the traced wordmark, the globes carry the logo's own continent
-drawings in the logo's two tones, and the aeroplane, car and balls are
+drawings in the logo's two tones, and the aeroplane (a generic four-engine
+double-decker with no airline markings), car and balls are
 modelled from simple solids. The floor only catches shadows; the picture is
 composited over the flat brand cream afterwards so the background is exact.
 """
@@ -55,7 +56,7 @@ def lin(hex_color):
     return (*out, 1.0)
 
 
-def material(name, color=None, rough=0.5, coat=0.0, metal=0.0, image=None, projected=False, alpha_image=False):
+def material(name, color=None, rough=0.5, coat=0.0, metal=0.0, image=None, projected=False, alpha_image=False, spec=None):
     m = bpy.data.materials.new(name)
     m.use_nodes = True
     nt = m.node_tree
@@ -64,6 +65,8 @@ def material(name, color=None, rough=0.5, coat=0.0, metal=0.0, image=None, proje
     b.inputs['Metallic'].default_value = metal
     if 'Coat Weight' in b.inputs:
         b.inputs['Coat Weight'].default_value = coat
+    if spec is not None and 'Specular IOR Level' in b.inputs:
+        b.inputs['Specular IOR Level'].default_value = spec
     if color:
         b.inputs['Base Color'].default_value = lin(color)
     if image:
@@ -171,25 +174,32 @@ def wing(name, root, tip, span, sweep, thick, mat, parent, origin, side=1, verti
 
 
 def aeroplane(loc, yaw, bank=0.0, pitch=0.0, scale=1.0):
-    """A small airliner. Nose along +x. About 5 m long at scale 1."""
+    """A four-engine, double-deck airliner in plain white: no airline livery or
+    markings. Nose along +x. About 6 m long at scale 1."""
     root = link(bpy.data.objects.new('aeroplane', None))
-    white = material('plane white', '#FBFAF6', rough=0.22, coat=0.6)
-    dark = material('plane ink', INK, rough=0.35, coat=0.3)
-    cyl('fuselage', 0.33, 3.0, (0.1, 0, 0), white, root, rot=(0, math.pi / 2, 0))
-    bpy.ops.mesh.primitive_uv_sphere_add(radius=0.33, segments=48, ring_count=24, location=(1.6, 0, 0))
+    white = material('plane white', '#F7F5EF', rough=0.3, coat=0.4)
+    grey = material('plane grey', '#C9C6BD', rough=0.4)
+    dark = material('plane dark', INK, rough=0.4)
+    tall = 1.22                                             # the double deck: a taller-than-wide body
+    body = cyl('fuselage', 0.4, 3.3, (0.15, 0, 0), white, root, rot=(0, math.pi / 2, 0))
+    body.scale = (tall, 1, 1)                               # local x is up after the rotation
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=0.4, segments=48, ring_count=24, location=(1.8, 0, 0))
     nose = bpy.context.object
-    nose.scale = (2.0, 1, 1)
+    nose.scale = (1.75, 1, tall)
     bpy.ops.object.shade_smooth()
     nose.data.materials.append(white)
     nose.parent = root
-    cyl('tail cone', 0.33, 1.7, (-2.25, 0, 0.06), white, root, rot=(0, -math.pi / 2, 0), r2=0.07)
-    box('windscreen', (0.34, 0.5, 0.12), (1.72, 0, 0.17), dark, root, rot=(0, 0.5, 0), bevel=0.04)
+    tail = cyl('tail cone', 0.4, 2.0, (-2.5, 0, 0.1), white, root, rot=(0, -math.pi / 2, 0), r2=0.08)
+    tail.scale = (tall, 1, 1)
+    box('windscreen', (0.3, 0.5, 0.1), (2.02, 0, 0.2), dark, root, rot=(0, 0.6, 0), bevel=0.04)
     for side in (1, -1):
-        wing('wing', 1.25, 0.38, 2.75, 1.25, 0.11, white, root, (0.55, side * 0.2, -0.12), side)
-        wing('stabiliser', 0.6, 0.22, 1.0, 0.5, 0.07, white, root, (-2.25, side * 0.08, 0.1), side)
-        cyl('engine', 0.17, 0.72, (0.25, side * 1.0, -0.33), dark, root, rot=(0, math.pi / 2, 0))
-        cyl('engine lip', 0.185, 0.1, (0.6, side * 1.0, -0.33), white, root, rot=(0, math.pi / 2, 0))
-    wing('fin', 0.85, 0.3, 1.05, 0.75, 0.08, dark, root, (-2.05, 0, 0.22), vertical=True)
+        wing('wing', 1.75, 0.42, 3.35, 1.75, 0.13, white, root, (0.95, side * 0.25, -0.2), side)
+        box('wingtip fence', (0.34, 0.03, 0.3), (-1.0, side * 3.6, -0.2), white, root, rot=(0, 0.25, 0), bevel=0.01)
+        wing('stabiliser', 0.85, 0.3, 1.35, 0.75, 0.08, white, root, (-2.45, side * 0.1, 0.16), side)
+        for span, fwd in ((1.15, 0.55), (2.15, -0.05)):     # two engines under each wing
+            cyl('engine', 0.2, 0.78, (fwd, side * span, -0.42), grey, root, rot=(0, math.pi / 2, 0))
+            cyl('engine intake', 0.17, 0.05, (fwd + 0.4, side * span, -0.42), dark, root, rot=(0, math.pi / 2, 0))
+    wing('fin', 1.25, 0.42, 1.5, 1.05, 0.1, white, root, (-2.2, 0, 0.36), vertical=True)
     root.location = loc
     root.scale = (scale,) * 3
     root.rotation_euler = Euler((bank, -pitch, yaw), 'ZYX')
@@ -218,23 +228,10 @@ def racing_car(loc, yaw, scale=1.0):
     return root
 
 
-def dashed_route(p0, p1, p2, mat, dash=0.34, gap=0.3, width=0.07):
-    """A dashed flight path lying on the floor along a curve p0 -> p2 (control p1)."""
-    pts = [p0 * (1 - t) ** 2 + p1 * 2 * (1 - t) * t + p2 * t * t for t in [i / 400 for i in range(401)]]
-    travelled, on_until, start = 0.0, dash, None
-    for a, b in zip(pts, pts[1:]):
-        seg = (b - a).length
-        phase = travelled % (dash + gap)
-        if phase < dash:
-            mid = (a + b) / 2
-            box('dash', (seg * 1.05, width, 0.012), (mid.x, mid.y, 0.008), mat, rot=(0, 0, math.atan2(b.y - a.y, b.x - a.x)))
-        travelled += seg
-
-
 # --------------------------------------------------------------- build
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene
-ink = material('ink', '#191817', rough=0.5, coat=0.15)
+ink = material('ink', '#141312', rough=0.75, spec=0.25)
 
 ring = LineString(G['centre']).buffer(G['RING_T'] / 2, 24).simplify(0.2)
 extruded('loop', [list(ring.exterior.coords)] + [list(i.coords) for i in ring.interiors], ink)
@@ -243,8 +240,8 @@ for key, polys in SHAPES.items():
         extruded(f'{key}{i}', [p['outer']] + p['holes'], ink)
 
 if args.shot == 'lockup':
-    sphere('globe left', G['LEFT'], material('globe left', rough=0.55, coat=0.1, image='globe_left_top.png', projected=True))
-    sphere('globe right', G['RIGHT'], material('globe right', rough=0.55, coat=0.1, image='globe_right_top.png', projected=True))
+    sphere('globe left', G['LEFT'], material('globe left', rough=0.95, spec=0.0, image='globe_left_top.png', projected=True))
+    sphere('globe right', G['RIGHT'], material('globe right', rough=0.95, spec=0.0, image='globe_right_top.png', projected=True))
 else:
     sphere('football', G['LEFT'], material('football', rough=0.38, coat=0.2, image='tex_soccer.png')).rotation_euler = (0.5, 0.3, 0.4)
     sphere('tennis ball', G['RIGHT'], material('tennis', rough=0.9, image='tex_tennis.png')).rotation_euler = (0.9, 0.2, 1.1)
@@ -262,9 +259,8 @@ tag.visible_shadow = False
 
 # the aeroplane and its route
 W, H = G['LOCKUP_W'] * U, G['LOCKUP_H'] * U
-plane_at = Vector((W + 3.6, 2.9, 2.6))
-aeroplane(plane_at, yaw=math.radians(24), bank=math.radians(-10), pitch=math.radians(4), scale=1.25)
-dashed_route(Vector((1.2, 1.0, 0)), Vector((W * 0.6, 6.4, 0)), Vector((plane_at.x - 2.9, plane_at.y - 1.3, 0)), material('route', INK, rough=0.7))
+plane_at = Vector((W + 4.7, 1.5, 2.4))
+aeroplane(plane_at, yaw=math.radians(32), bank=math.radians(-8), pitch=math.radians(3), scale=1.0)
 
 # floor: shows only shadows
 bpy.ops.mesh.primitive_plane_add(size=600, location=(W / 2, -H / 2, 0))
@@ -272,17 +268,18 @@ floor = bpy.context.object
 floor.is_shadow_catcher = True
 floor.data.materials.append(material('floor', CREAM, rough=0.9))
 
-# light: a soft sun from the upper left plus cream sky fill
+# light: even, shadowless sky light carries the colours as they are; one broad
+# soft light from almost straight above adds gentle contact shadows only
 world = bpy.data.worlds.new('world')
 world.use_nodes = True
 bg = world.node_tree.nodes['Background']
-bg.inputs['Color'].default_value = lin('#FFF6E0')
-bg.inputs['Strength'].default_value = 0.7
+bg.inputs['Color'].default_value = (1, 1, 1, 1)
+bg.inputs['Strength'].default_value = 0.68
 sc.world = world
-bpy.ops.object.light_add(type='SUN', rotation=(math.radians(38), math.radians(-18), math.radians(20)))
+bpy.ops.object.light_add(type='SUN', rotation=(math.radians(9), math.radians(-7), 0))
 sun = bpy.context.object
-sun.data.energy = 3.0
-sun.data.angle = math.radians(9)
+sun.data.energy = 1.0
+sun.data.angle = math.radians(20)
 
 # camera
 centre = Vector((W / 2, -H / 2, 0))
