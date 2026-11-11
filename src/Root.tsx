@@ -9,7 +9,7 @@ const FRAMES = Math.round(T.duration * T.fps);
 export const Root: React.FC = () => (
   <>
     {LAYOUTS.map((layout) => {
-      const plan = subFramePlan(layout, T.fps, FRAMES);
+      const plan = subFramePlan(T.fps, FRAMES);
       return (
         <React.Fragment key={layout.id}>
           {/* Loop16x9, Loop9x16, Loop1x1: sharp preview with sound (Remotion Studio) */}

@@ -4,8 +4,8 @@ scratch (no samples, nothing licensed) and locked to src/timeline.json.
 
   score    D major at the timeline's tempo: a soft mallet line over a warm
            pad, D -> G -> A, resolving to D exactly as the logo is revealed.
-  effects  soccer bounces, racket swish + hit, tennis bounces, the loop
-           being drawn, the car pass: each on the frame the picture shows it.
+  effects  soccer bounces, racket swish + hit, tennis bounces, the car
+           lapping the loop and leaving: each on the frame the picture shows it.
   master   -16 LUFS integrated, true peak below -1.5 dBTP, 48 kHz stereo.
 
 Writes public/audio/loop_sting.wav and the two stems to out/stems/.
@@ -114,7 +114,7 @@ def reverb(x, wet=0.22, decay=1.1):
 def score():
     s = np.zeros((N, 2))
     land = T['resolve']                         # the resolve lands as the finished logo is revealed
-    hit, car = T['tennis']['hit'], T['car']['in']
+    hit, car = T['tennis']['hit'], 2.5            # chord changes: on the serve, then mid-lap
     # harmony: D (add9) -> G -> A sus -> D, changing with the action
     place(s, pad([50, 57, 64, 66], hit + 0.3, attack=0.6), 0.0, 0, 0.30)
     place(s, pad([55, 59, 62, 66], car - hit + 0.3, attack=0.35), hit, 0, 0.30)
@@ -136,8 +136,8 @@ def score():
 # ----------------------------------------------------------------- effects
 def car_pass():
     """Engine rising under power, a doppler drop as it passes, air rushing by."""
-    go, out = T['car']['in'] - 0.1, T['car']['pass'] + 0.1   # loudest as it fills the frame
-    t0 = T['car']['in'] - 0.35
+    go, out = T['car']['in'], T['car']['offLoop'] + 0.2   # doppler as it leaves the loop
+    t0 = T['car']['in'] - 0.2
     dur = out - t0 + 0.9
     n = int(dur * SR)
     t = np.arange(n) / SR + t0
@@ -151,7 +151,7 @@ def car_pass():
     eng = lowpass(eng, 2600)
     near = np.exp(-((t - (out - 0.1)) / 0.3) ** 2)         # loudest as it fills the frame
     rev = 0.10 * np.exp(-((t - (go - 0.12)) / 0.09) ** 2)  # a small blip of throttle before it goes
-    amp = 0.10 * np.clip((t - t0) / 0.25, 0, 1) + rev + 0.9 * near
+    amp = 0.34 * np.clip((t - t0) / 0.3, 0, 1) + rev + 0.6 * near   # present all the way round the lap
     amp *= np.clip((t0 + dur - t) / 0.5, 0, 1)
     air = bandpass(rng.standard_normal(n), 500, 5000) * near ** 1.5 * 0.55
     mono = fade(eng * amp + air, 0.02, 0.2)
@@ -211,7 +211,7 @@ def effects():
     place(e, racket_hit(), tn['hit'], pan=0.4, gain=0.66)
     for at, g in zip(tn['bounces'], (0.4, 0.2)):
         place(e, ball_bounce(520, 260, 0.03, 0.5, 0.14, 2500), at, pan=0.25, gain=g)
-    place(e, road_draw(T['draw'][1] - T['draw'][0]), T['draw'][0], pan=0.0, gain=0.07)
+    place(e, road_draw(T['car']['offLoop'] - T['car']['onLoop']), T['car']['onLoop'], pan=0.0, gain=0.05)
     dry = e.copy()
     return dry + 0.35 * (reverb(e, 0.5, 0.6) - e)
 

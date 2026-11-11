@@ -1,8 +1,6 @@
-// Every pose in the film is a pure function of time (seconds) and layout.
-// Nothing here knows about frames, so motion blur can sample between frames.
-//
-// Coordinates: "lockup space" = pixels of the supplied wordmark art
-// (1725 wide). lockupPose() maps it onto each frame.
+// Every pose in the film is a pure function of time (seconds).
+// World: x and z are the wordmark art's pixel axes (the lockup lies flat on
+// the floor, 1725 units wide), y is up.
 import A from './assets.json';
 import S from './stencils.json';
 import T from './timeline.json';
@@ -10,95 +8,98 @@ import type { Layout } from './layouts';
 
 export const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 export const prog = (t: number, a: number, b: number) => clamp01((t - a) / (b - a));
+const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 
 // Easing by role. No linear moves anywhere.
 export const ease = {
   inOutSine: (k: number) => 0.5 - 0.5 * Math.cos(Math.PI * k),
   inOutCubic: (k: number) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2),
   outCubic: (k: number) => 1 - Math.pow(1 - k, 3),
-  outQuart: (k: number) => 1 - Math.pow(1 - k, 4),
-};
-
-// ----------------------------------------------------------------- lockup
-export const LOCKUP_W = A.wordmark.w;
-export const LOCKUP_H = A.tagline.dy + A.tagline.h;
-
-/** camera: 0 while it sits close on the two balls, 1 once it has pulled back to the lockup */
-export const pullBack = (t: number) => ease.inOutCubic(prog(t, T.draw[0] + 0.25, T.car.pass + 0.2));
-
-export const lockupPose = (L: Layout, t: number) => {
-  const k = pullBack(t);
-  // a slow 1.5 % push through the hold that comes to rest on the last frame
-  const push = 1 + 0.015 * ease.outCubic(prog(t, T.car.out, T.duration));
-  const s = (L.lockupWidth / LOCKUP_W) * Math.pow(L.zoom, 1 - k) * push; // zoom in log space
-  // the point of the lockup that sits at the centre of the frame
-  const fx = LOCKUP_W / 2;
-  const fy = LOOP_CY + (LOCKUP_H / 2 - LOOP_CY) * k;
-  return { x: L.w / 2 - fx * s, y: L.h * L.lockupCy - fy * s, s };
-};
-/** frame edges expressed in lockup space at time t */
-export const frameEdges = (L: Layout, t = 0) => {
-  const p = lockupPose(L, t);
-  return { left: -p.x / p.s, right: (L.w - p.x) / p.s, top: -p.y / p.s, bottom: (L.h - p.y) / p.s };
+  outBack: (k: number) => 1 + 2.2 * Math.pow(k - 1, 3) + 1.2 * Math.pow(k - 1, 2),
 };
 
 // --------------------------------------------------- the loop's geometry
-// The two rings of the infinity sign, measured from the wordmark art.
+export const LOCKUP_W = A.wordmark.w;
+export const LOCKUP_H = A.tagline.dy + A.tagline.h;
 export const RING_R = (S.loop.left.r + S.loop.right.r) / 2;
 export const RING_T = (S.loop.left.thick + S.loop.right.thick) / 2;
 export const CY = (S.loop.left.cy + S.loop.right.cy) / 2;
-const LOOP_CY = CY;
-export const LEFT = { x: S.loop.left.cx, y: CY };
-export const RIGHT = { x: S.loop.right.cx, y: CY };
-export const CROSS = { x: (LEFT.x + RIGHT.x) / 2, y: CY };
-export const BALL_R = RING_R - RING_T / 2 - 34; // a ball sits inside a ring with air around it
-export const GROUND = CY + BALL_R; // where a ball resting in its ring touches down
+export const LEFT = { x: S.loop.left.cx, z: CY };
+export const RIGHT = { x: S.loop.right.cx, z: CY };
+export const BALL_R = RING_R - RING_T / 2 - 16; // a ball sits inside a ring with a little air
+export const SLAB = 26; // thickness of the track and the letters
 
-const JOIN = (52 * Math.PI) / 180; // where each ring meets the crossing strokes
-/** centre line of the infinity sign as an SVG path, drawn from the crossing */
-export const loopPath = () => {
-  const dx = RING_R * Math.cos(JOIN);
-  const dy = RING_R * Math.sin(JOIN);
-  const f = (x: number, y: number) => `${x.toFixed(1)} ${y.toFixed(1)}`;
-  return [
-    `M${f(CROSS.x, CROSS.y)}`,
-    `L${f(LEFT.x + dx, CY - dy)}`,
-    `A${RING_R} ${RING_R} 0 1 0 ${f(LEFT.x + dx, CY + dy)}`,
-    `L${f(RIGHT.x - dx, CY - dy)}`,
-    `A${RING_R} ${RING_R} 0 1 1 ${f(RIGHT.x - dx, CY + dy)}`,
-    `L${f(CROSS.x, CROSS.y)}`,
-  ].join('');
+// The car's route: in along the floor, once round the infinity sign, out again.
+const HALF = (RIGHT.x - LEFT.x) / 2;
+const J = Math.acos(RING_R / HALF); // where the crossing straights leave each ring, tangentially
+const DIAG = 2 * Math.sqrt(HALF * HALF - RING_R * RING_R);
+const ARC_A = RING_R * (Math.PI / 2 - J); // left ring: bottom up to the crossing
+const ARC_R = RING_R * (2 * Math.PI - 2 * J); // all the way round the right ring
+const ARC_B = RING_R * (1.5 * Math.PI - J); // left ring: over the top, back to the bottom
+export const LOOP_LEN = ARC_A + DIAG + ARC_R + DIAG + ARC_B;
+export const RUN_IN = 2200;
+export const RUN_OUT = 3600;
+
+/** point and heading on the infinity loop, s = distance from the bottom of the left ring */
+export const loopPoint = (s: number) => {
+  const onRing = (c: { x: number; z: number }, a: number, dir: number) => ({
+    x: c.x + RING_R * Math.cos(a), z: c.z + RING_R * Math.sin(a),
+    hx: -Math.sin(a) * dir, hz: Math.cos(a) * dir,
+  });
+  const line = (p: { x: number; z: number }, q: { x: number; z: number }, k: number) => {
+    const d = Math.hypot(q.x - p.x, q.z - p.z);
+    return { x: lerp(p.x, q.x, k), z: lerp(p.z, q.z, k), hx: (q.x - p.x) / d, hz: (q.z - p.z) / d };
+  };
+  const pt = (c: { x: number; z: number }, a: number) => ({ x: c.x + RING_R * Math.cos(a), z: c.z + RING_R * Math.sin(a) });
+  if (s < 0) return { x: LEFT.x + s, z: CY + RING_R, hx: 1, hz: 0 };
+  if (s <= ARC_A) return onRing(LEFT, Math.PI / 2 - s / RING_R, -1);
+  s -= ARC_A;
+  if (s <= DIAG) return line(pt(LEFT, J), pt(RIGHT, Math.PI + J), s / DIAG);
+  s -= DIAG;
+  if (s <= ARC_R) return onRing(RIGHT, Math.PI + J + s / RING_R, 1);
+  s -= ARC_R;
+  if (s <= DIAG) return line(pt(RIGHT, Math.PI - J), pt(LEFT, -J), s / DIAG);
+  s -= DIAG;
+  if (s <= ARC_B) return onRing(LEFT, -J - s / RING_R, -1);
+  s -= ARC_B;
+  return { x: LEFT.x + s, z: CY + RING_R, hx: 1, hz: 0 };
 };
-export const LOOP_LENGTH = (() => {
-  const dx = RING_R * Math.cos(JOIN);
-  const dy = RING_R * Math.sin(JOIN);
-  const arc = RING_R * (2 * Math.PI - 2 * JOIN);
-  const d1 = Math.hypot(LEFT.x + dx - CROSS.x, dy);
-  const d2 = Math.hypot(RIGHT.x - dx - (LEFT.x + dx), 2 * dy);
-  return d1 * 2 + d2 + arc * 2;
-})();
-export const drawProgress = (t: number) => ease.inOutCubic(prog(t, T.draw[0], T.draw[1]));
+
+// -------------------------------------------------------------------- car
+/** distance along the route (negative = still on the run-in) */
+export const carDistance = (t: number) => {
+  const c = T.car;
+  // steady round the loop; the run-in and run-out join it at the same speed
+  const v = LOOP_LEN / (c.offLoop - c.onLoop);
+  if (t < c.onLoop) {
+    const k = (c.onLoop - t) / (c.onLoop - c.in);
+    return -(v * (c.onLoop - c.in) * k + (RUN_IN - v * (c.onLoop - c.in)) * k * k); // arrives carrying speed
+  }
+  if (t <= c.offLoop) return v * (t - c.onLoop);
+  const k = (t - c.offLoop) / (c.out - c.offLoop);
+  return LOOP_LEN + v * (c.out - c.offLoop) * k + (RUN_OUT - v * (c.out - c.offLoop)) * k * k; // and powers away
+};
+export const carPose = (t: number) => {
+  const p = loopPoint(carDistance(t));
+  return { ...p, yaw: Math.atan2(-p.hz, p.hx), visible: t > T.car.in && t < T.car.out };
+};
+/** how much of the loop has been laid down behind the car, 0..1 */
+export const trackDrawn = (t: number) => clamp01((carDistance(t) - 30) / LOOP_LEN);
 
 // ------------------------------------------------------------------ balls
-const G = 10560; // gravity in lockup px/s^2: a 0.5 s hop rises about one ball
+const G = 10560; // gravity in world units/s^2: a 0.5 s hop rises about one ball
 const STRETCH = 0.05;
+export type Ball = { x: number; y: number; z: number; sy: number; roll: number; rollAxis: [number, number, number] };
 
-type Ball = { x: number; y: number; sx: number; sy: number; spin: number; height: number; shadow: number };
-
-/**
- * A ball that arrives, bounces on the given beats with shrinking hops, and
- * rolls to rest centred in its ring.
- */
 const bounceIn = (
-  t: number, start: number, x0: number, target: number, contacts: number[], rest: number, settle: number,
-  first: { h: number; v: number }, // height and downward speed at `start`
+  t: number, start: number, from: { x: number; z: number }, to: { x: number; z: number },
+  contacts: number[], rest: number, settle: number, first: { h: number; v: number },
 ): Ball => {
   const c = 0.06; // contact time
   let h = 0;
   let sy = 1;
-  // first leg: from the start state down to the first contact
   if (t <= contacts[0]) {
-    const k = t - start;
+    const k = Math.max(0, t - start);
     h = Math.max(0, first.h - first.v * k - 0.5 * G * k * k);
     sy = 1 + STRETCH * clamp01((first.v + G * k) / 2600);
   }
@@ -108,7 +109,8 @@ const bounceIn = (
     const b = times[i + 1];
     const air = b - a - c;
     const v0 = (G * air) / 2;
-    const squash = 0.03 + 0.07 * Math.min(1, (i === 0 ? first.v + G * (a - start) : (G * (a - times[i - 1] - c)) / 2) / 2600);
+    const impact = i === 0 ? first.v + G * (a - start) : (G * (a - times[i - 1] - c)) / 2;
+    const squash = 0.03 + 0.07 * Math.min(1, impact / 2600);
     if (t > a && t <= a + c) sy = 1 + STRETCH - (squash + STRETCH) * Math.sin(Math.PI * prog(t, a, a + c));
     else if (t > a + c && t <= b) {
       const k = t - a - c;
@@ -117,137 +119,117 @@ const bounceIn = (
     }
   }
   if (t > rest && t <= rest + c) sy = 1 - 0.03 * Math.sin(Math.PI * prog(t, rest, rest + c));
-  // sideways: one decelerating glide that ends exactly on the ring centre
-  const u = prog(t, start, settle);
-  const x = target + (x0 - target) * Math.pow(1 - u, 2.4);
-  const spin = (((x - x0) / BALL_R) * 180) / Math.PI; // rolls without slipping
+  // across the floor: one decelerating glide that ends exactly on the ring centre
+  const u = 1 - Math.pow(1 - prog(t, start, settle), 2.4);
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const dist = Math.hypot(dx, dz);
   return {
-    x, y: GROUND - BALL_R * sy - h, sx: 1 + (1 - sy) * 0.6, sy, spin, height: h,
-    shadow: clamp01(1 - h / (BALL_R * 3.2)),
+    x: from.x + dx * u, z: from.z + dz * u, y: BALL_R * sy + h, sy,
+    roll: (dist * u) / BALL_R, // rolls without slipping
+    rollAxis: [dz / dist, 0, -dx / dist],
   };
 };
 
-export const soccerBall = (L: Layout, t: number): Ball & { visible: boolean } => {
+export const soccerBall = (t: number): Ball => {
   const s = T.soccer;
-  const drop = 0.5 * G * s.bounces[0] * s.bounces[0]; // falls in from above the frame
-  const x0 = Math.min(LEFT.x - 640, frameEdges(L, 0).left - BALL_R * 1.1); // from off the left edge
-  const b = bounceIn(t, 0, x0, LEFT.x, s.bounces, s.rest, s.settle, { h: drop, v: 0 });
-  return { ...b, visible: true };
+  const drop = 0.5 * G * s.bounces[0] * s.bounces[0];
+  return bounceIn(t, 0, { x: LEFT.x - 1150, z: CY + 260 }, LEFT, s.bounces, s.rest, s.settle, { h: drop, v: 0 });
 };
 
-// The serve: the ball is tossed up from below the frame, hangs, and is hit.
-export const HIT = { x: RIGHT.x + 380, y: CY - 330 };
-
-export const tennisBall = (L: Layout, t: number): Ball & { visible: boolean } => {
+// The serve: the ball drops in, an oversized racket meets it in mid-air.
+export const HIT = { x: RIGHT.x + 420, y: 560, z: CY - 120 };
+export const tennisBall = (t: number): Ball & { visible: boolean } => {
   const s = T.tennis;
   if (t <= s.hit) {
-    const from = frameEdges(L).bottom + BALL_R * 1.2;
-    const k = ease.outQuart(prog(t, s.toss, s.hit + 0.04)); // still drifting up when it is struck
-    return {
-      x: HIT.x, y: from + (HIT.y - from) * k, sx: 1, sy: 1, spin: -70 * (1 - k), height: GROUND - BALL_R - HIT.y,
-      shadow: 0, visible: t > s.toss,
-    };
+    const k = prog(t, s.enter, s.hit);
+    const fall = 1900 * (1 - k) * (1 - k); // drops in and hangs for the racket
+    return { x: HIT.x + 160 * (1 - k), y: HIT.y + fall, z: HIT.z, sy: 1, roll: -1.2 * k, rollAxis: [0, 0, 1], visible: t > s.enter };
   }
-  const fall = s.bounces[0] - s.hit;
-  const h0 = GROUND - BALL_R - HIT.y;
-  const v = (h0 - 0.5 * G * fall * fall) / fall;
-  const b = bounceIn(t, s.hit, HIT.x, RIGHT.x, s.bounces, s.rest, s.settle, { h: h0, v });
-  return { ...b, visible: true };
+  const fallT = s.bounces[0] - s.hit;
+  const h0 = HIT.y - BALL_R;
+  const v = (h0 - 0.5 * G * fallT * fallT) / fallT;
+  return { ...bounceIn(t, s.hit, HIT, RIGHT, s.bounces, s.rest, s.settle, { h: h0, v }), visible: true };
 };
 
-// ----------------------------------------------------------------- racket
-// Oversized, mostly out of frame: only the head sweeps through the corner.
-export const RACKET = (() => {
-  const dx = S.racket.grip[0] - S.racket.strings[0];
-  const dy = S.racket.grip[1] - S.racket.strings[1];
-  const reachArt = Math.hypot(dx, dy);
-  const scale = (BALL_R * 2 * 2.5) / 700; // head about 2.5 balls long
-  const reach = reachArt * scale;
-  const native = (Math.atan2(dy, dx) * 180) / Math.PI; // art: head up-left of the grip
-  const contactDir = 42; // at contact the head lies this far below horizontal, left of the grip
-  const rad = (contactDir * Math.PI) / 180;
-  return {
-    scale, reach, native,
-    grip: { x: HIT.x + reach * Math.cos(rad), y: HIT.y - reach * Math.sin(rad) },
-    contact: -(native + contactDir), // CSS rotation at contact
-    wind: 72, // degrees of wind-up before contact
-    follow: 95,
-  };
-})();
-
-export const racketRot = (t: number) => {
+/** racket: swing angle in degrees about its grip (0 = at contact), and whether it is on stage */
+export const racket = (t: number) => {
   const s = T.tennis;
-  const top = RACKET.contact + RACKET.wind;
-  if (t <= s.swing) return top + 14 * ease.inOutSine(prog(t, s.toss + 0.1, s.swing)); // draws back first
-  const start = top + 14;
-  const dur = s.hit - s.swing;
-  if (t <= s.hit) {
-    const k = (t - s.swing) / dur;
-    return start - (start - RACKET.contact) * k * k; // accelerates into the ball
+  const WIND = 105;
+  const FOLLOW = 120;
+  let a: number;
+  if (t <= s.swing) a = WIND + 16 * ease.inOutSine(prog(t, s.enter, s.swing)); // draws back first
+  else if (t <= s.hit) {
+    const k = (t - s.swing) / (s.hit - s.swing);
+    a = (WIND + 16) * (1 - k * k); // accelerates into the ball
+  } else {
+    const v = (2 * (WIND + 16)) / (s.hit - s.swing);
+    a = -FOLLOW * ease.outCubic(clamp01((t - s.hit) / ((3 * FOLLOW) / v))); // decelerates from exactly that speed
   }
-  const v = (2 * (start - RACKET.contact)) / dur;
-  const followT = (3 * RACKET.follow) / v; // decelerates from exactly that speed
-  return RACKET.contact - RACKET.follow * ease.outCubic(clamp01((t - s.hit) / followT));
+  // lifts away once the stroke is over
+  const leave = ease.inOutCubic(prog(t, s.hit + 0.25, s.hit + 0.75));
+  return { angle: a, lift: 2600 * leave, visible: t > s.enter - 0.05 && t < s.hit + 0.75 };
 };
-export const racketVisible = (t: number) => t > T.tennis.toss && t < T.tennis.hit + 0.5;
 
-// -------------------------------------------------------------------- car
-// Passes close to the lens along its own heading and wipes the logo on.
-export const CAR_DIR = (() => {
-  const a = (43 * Math.PI) / 180; // the art faces down-left
-  return { x: -Math.cos(a), y: Math.sin(a) };
-})();
-const CAR_POWER = Math.log(0.5) / Math.log((T.car.pass - T.car.in) / (T.car.out - T.car.in));
-export const carPose = (L: Layout, t: number) => {
-  const e = frameEdges(L, T.car.out);
-  const w = L.carWidth;
-  const h = (w * S.car.h) / S.car.w;
-  const centre = { x: LOCKUP_W / 2, y: LOCKUP_H / 2 - 40 };
-  // far enough either side to be fully out of every frame
-  const reach = Math.hypot(e.right - e.left, e.bottom - e.top) / 2 + w * 0.8;
-  const k = prog(t, T.car.in, T.car.out);
-  // gathers speed all the way through; timed so it is centred on the lockup at car.pass
-  const q = (Math.pow(k, CAR_POWER) - 0.5) * 2 * reach;
-  const grow = 0.86 + 0.28 * k; // comes toward the lens
+// --------------------------------------------------------- the transformation
+/** 0 = balls, 1 = globes */
+export const morph = (t: number) => ease.inOutCubic(prog(t, T.morph[0], T.morph[1]));
+export const lettersUp = (t: number) => ease.outCubic(prog(t, T.letters[0], T.letters[1]));
+export const taglineIn = (t: number) => ease.inOutSine(prog(t, T.tagline[0], T.tagline[1]));
+
+// ----------------------------------------------------------------- camera
+const VFOV = 26;
+const keys = (t: number, ks: [number, number][]) => {
+  if (t <= ks[0][0]) return ks[0][1];
+  for (let i = 0; i < ks.length - 1; i++) {
+    const [t0, v0] = ks[i];
+    const [t1, v1] = ks[i + 1];
+    if (t <= t1) return lerp(v0, v1, ease.inOutSine((t - t0) / (t1 - t0)));
+  }
+  return ks[ks.length - 1][1];
+};
+
+export const camera = (L: Layout, t: number) => {
+  const aspect = L.w / L.h;
+  const tan = Math.tan((VFOV * Math.PI) / 360);
+  const dEnd = LOCKUP_W / (L.lockupFrac * 2 * tan * aspect); // top-down: wordmark fills lockupFrac of the width
+  const up0 = T.rise[0];
+  const up1 = T.rise[1];
+  const el = keys(t, [[0, 21], [T.car.in, 27], [up0, 44], [up1, 90]]);
+  const az = keys(t, [[0, -24], [T.car.in, -13], [up0, 9], [up1, 0]]);
+  // after it lands: a slow push that comes to rest on the last frame
+  const push = 1 - 0.035 * ease.outCubic(prog(t, up1, T.duration));
+  const d = dEnd * keys(t, [[0, L.open], [T.car.in, L.open * 0.94], [up0 - 0.5, L.chase], [up1, 1]]) * push;
+  // what it looks at: the two balls, then leaning toward the car, then the lockup centre
+  const car = carPose(t);
+  const lean = 0.3 * Math.sin(Math.PI * prog(t, T.car.in + 0.1, up0 + 0.3));
+  const settle = keys(t, [[up0, 0], [up1, 1]]);
+  const base = { x: LOCKUP_W / 2, y: lerp(BALL_R * 0.9, 0, settle), z: lerp(CY + 20, LOCKUP_H / 2, settle) };
+  const target = { x: lerp(base.x, car.x, lean), y: base.y, z: lerp(base.z, car.z, lean) };
+  const e = (el * Math.PI) / 180;
+  const a = (az * Math.PI) / 180;
   return {
-    x: centre.x + CAR_DIR.x * q, y: centre.y + CAR_DIR.y * q, w: w * grow, h: h * grow, q,
-    visible: t > T.car.in && t < T.car.out,
+    fov: VFOV,
+    position: [target.x + d * Math.sin(a) * Math.cos(e), target.y + d * Math.sin(e), target.z + d * Math.cos(a) * Math.cos(e)] as [number, number, number],
+    target: [target.x, target.y, target.z] as [number, number, number],
+    up: [-Math.sin(a) * Math.sin(e), Math.cos(e), -Math.cos(a) * Math.sin(e)] as [number, number, number],
   };
-};
-/** 0 before the car arrives, 1 once it has gone: which side of the wipe we are on */
-export const wipeDone = (t: number) => (t >= T.car.out ? 1 : t <= T.car.in ? 0 : 0.5);
-
-// ---------------------------------------------------------------- tagline
-export const taglinePose = (t: number) => {
-  const k = ease.outCubic(prog(t, T.tagline[0], T.tagline[1]));
-  return { opacity: ease.inOutSine(prog(t, T.tagline[0], T.tagline[0] + 0.45)), dy: 16 * (1 - k) };
 };
 
 // ----------------------------------------------------------- motion blur
-/** largest on-screen travel (px) of anything during one shutter interval, camera move included */
-export const travel = (L: Layout, t: number, shutter: number) => {
-  const a = t - shutter / 2;
-  const b = t + shutter / 2;
-  const pa = lockupPose(L, a);
-  const pb = lockupPose(L, b);
-  type P = { x: number; y: number };
-  // distance on screen between a point at time a and a point at time b
-  const far = (p: P, q: P) => Math.hypot(pb.x + q.x * pb.s - (pa.x + p.x * pa.s), pb.y + q.y * pb.s - (pa.y + p.y * pa.s));
-  const s = pb.s;
-  let m = 0;
-  // the lockup itself (camera pull-back and the slow push)
-  for (const c of [{ x: 0, y: 0 }, { x: LOCKUP_W, y: LOCKUP_H }]) m = Math.max(m, far(c, c));
-  const s0 = soccerBall(L, a);
-  const s1 = soccerBall(L, b);
-  m = Math.max(m, far(s0, s1) + Math.abs(s1.sy - s0.sy) * BALL_R * s + (Math.abs(s1.spin - s0.spin) * Math.PI * BALL_R * s) / 180);
-  const t0 = tennisBall(L, a);
-  const t1 = tennisBall(L, b);
-  if (t0.visible) m = Math.max(m, far(t0, t1) + Math.abs(t1.sy - t0.sy) * BALL_R * s + (Math.abs(t1.spin - t0.spin) * Math.PI * BALL_R * s) / 180);
-  if (racketVisible(t)) m = Math.max(m, (Math.abs(racketRot(b) - racketRot(a)) * Math.PI * RACKET.reach * 1.4 * s) / 180);
-  const c0 = carPose(L, a);
-  const c1 = carPose(L, b);
-  if (c0.visible || c1.visible) m = Math.max(m, far(c0, c1) + Math.abs(c1.w - c0.w) * s * 0.5);
-  m = Math.max(m, Math.abs(drawProgress(b) - drawProgress(a)) * LOOP_LENGTH * s);
-  m = Math.max(m, Math.abs(taglinePose(b).dy - taglinePose(a).dy) * s);
-  return m;
+/** how many shutter samples a frame needs: more while something is quick */
+export const blurSamples = (t: number) => {
+  const dt = 1 / 240;
+  const c0 = carPose(t - dt);
+  const c1 = carPose(t + dt);
+  const carSpeed = c0.visible ? Math.hypot(c1.x - c0.x, c1.z - c0.z) / (2 * dt) : 0;
+  const r = Math.abs(racket(t + dt).angle - racket(t - dt).angle) / (2 * dt);
+  const s0 = soccerBall(t - dt);
+  const s1 = soccerBall(t + dt);
+  const b0 = tennisBall(t - dt);
+  const b1 = tennisBall(t + dt);
+  const ball = Math.max(Math.hypot(s1.x - s0.x, s1.y - s0.y, s1.z - s0.z), Math.hypot(b1.x - b0.x, b1.y - b0.y, b1.z - b0.z)) / (2 * dt);
+  const cam = t > T.rise[0] - 0.2 && t < T.rise[1] ? 3 : 1;
+  const speed = Math.max(carSpeed, r * 12, ball); // world units per second
+  return Math.max(cam, Math.min(8, Math.ceil(speed / 520)));
 };

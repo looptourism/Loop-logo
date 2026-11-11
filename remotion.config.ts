@@ -25,3 +25,4 @@ Config.setPixelFormat('yuv420p');
 Config.setCodec('h264');
 Config.setCrf(14);
 Config.setOverwriteOutput(true);
+Config.setChromiumOpenGlRenderer('swangle'); // software WebGL for the 3D scene: works without a GPU
