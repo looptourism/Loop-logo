@@ -2,11 +2,11 @@
   "fps": 60,
   "duration": 7.0,
   "bpm": 120,
-  "fadeIn": [0.0, 0.6],
-  "car": { "settle": 0.66, "go": 1.0, "out": 1.9 },
-  "tennis": { "wind": 1.95, "swing": 2.36, "hit": 2.5, "ground": 2.65, "rest": 3.3 },
-  "soccer": { "crouch": 2.95, "up1": 3.1, "land1": 3.5, "land2": 4.0, "land3": 4.5, "contact": 0.07, "out": 4.95 },
-  "props": { "fadeOut": [4.6, 5.0] },
-  "settle": [4.95, 5.5],
-  "hold": [5.5, 7.0]
+  "soccer": { "bounces": [0.5, 1.0, 1.36], "rest": 1.58, "settle": 1.8 },
+  "tennis": { "toss": 0.9, "swing": 1.16, "hit": 1.5, "bounces": [1.72, 2.02], "rest": 2.16, "settle": 2.3 },
+  "draw": [2.1, 2.9],
+  "car": { "in": 2.9, "pass": 3.5, "out": 3.9 },
+  "tagline": [3.95, 4.6],
+  "resolve": 4.0,
+  "hold": [4.6, 7.0]
 }

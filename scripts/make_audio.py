@@ -3,9 +3,9 @@
 scratch (no samples, nothing licensed) and locked to src/timeline.json.
 
   score    D major at the timeline's tempo: a soft mallet line over a warm
-           pad, D -> G -> A, resolving to D exactly as the lockup settles.
-  effects  car pass, racket swish + hit, tennis bounce, soccer bounces,
-           each on the frame the picture shows it.
+           pad, D -> G -> A, resolving to D exactly as the logo is revealed.
+  effects  soccer bounces, racket swish + hit, tennis bounces, the loop
+           being drawn, the car pass: each on the frame the picture shows it.
   master   -16 LUFS integrated, true peak below -1.5 dBTP, 48 kHz stereo.
 
 Writes public/audio/loop_sting.wav and the two stems to out/stems/.
@@ -113,30 +113,31 @@ def reverb(x, wet=0.22, decay=1.1):
 
 def score():
     s = np.zeros((N, 2))
-    land = T['settle'][1]                       # the resolve lands with the lockup
-    # harmony: D (add9) -> G -> A sus -> D, changing on the action beats
-    place(s, pad([50, 57, 64, 66], T['tennis']['hit'] + 0.3, attack=0.7), 0.0, 0, 0.30)
-    place(s, pad([55, 59, 62, 66], T['soccer']['land2'] - T['tennis']['hit'] + 0.3, attack=0.35), T['tennis']['hit'], 0, 0.30)
-    place(s, pad([57, 61, 62, 64], land - T['soccer']['land2'] + 0.25, attack=0.3), T['soccer']['land2'], 0, 0.30)
-    place(s, pad([50, 57, 62, 66, 69], DUR - land, attack=0.25, release=1.3), land, 0, 0.34)
-    for note, at in ((38, T['car']['go']), (43, T['tennis']['hit']), (45, T['soccer']['land2']), (38, land)):
-        place(s, bass(note, 1.5), at, 0, 0.42)
-    # melody: sparse, on the beat, leaving room for each effect
-    line = [(0.0, 66), (0.5, 69), (1.0, 74), (1.5, 76), (2.0, 69), (2.5, 71), (3.0, 74),
-            (3.5, 78), (4.0, 76), (4.5, 73), (5.0, 76)]
-    for i, (beats_s, note) in enumerate(line):
-        place(s, mallet(note), beats_s, pan=(-0.25 if i % 2 else 0.25), gain=0.30)
-    # the resolve: a rolled D major chord, low to high
+    land = T['resolve']                         # the resolve lands as the finished logo is revealed
+    hit, car = T['tennis']['hit'], T['car']['in']
+    # harmony: D (add9) -> G -> A sus -> D, changing with the action
+    place(s, pad([50, 57, 64, 66], hit + 0.3, attack=0.6), 0.0, 0, 0.30)
+    place(s, pad([55, 59, 62, 66], car - hit + 0.3, attack=0.35), hit, 0, 0.30)
+    place(s, pad([57, 61, 62, 64], land - car + 0.25, attack=0.3), car, 0, 0.32)
+    place(s, pad([50, 57, 62, 66, 69], DUR - land, attack=0.2, release=1.6), land, 0, 0.36)
+    for note, at in ((38, T['soccer']['bounces'][0]), (43, hit), (45, car), (38, land)):
+        place(s, bass(note, 1.6), at, 0, 0.42)
+    # melody: sparse, on the beat, climbing toward the reveal
+    line = [(0.5, 66), (1.0, 69), (1.5, 74), (2.0, 71), (2.5, 74), (3.0, 76), (3.5, 78)]
+    for i, (at, note) in enumerate(line):
+        place(s, mallet(note), at, pan=(-0.25 if i % 2 else 0.25), gain=0.30)
+    # the resolve: a rolled D major chord, low to high, left ringing through the hold
     for i, note in enumerate((62, 66, 69, 74, 78)):
-        place(s, mallet(note, 2.2, bright=0.8), land + i * 0.022, pan=-0.4 + 0.2 * i, gain=0.30)
+        place(s, mallet(note, 2.6, bright=0.8), land + i * 0.022, pan=-0.4 + 0.2 * i, gain=0.32)
+    place(s, mallet(81, 2.0, bright=0.6), land + 1.0, pan=0.2, gain=0.14)   # one soft echo in the hold
     return reverb(s, 0.24)
 
 
 # ----------------------------------------------------------------- effects
 def car_pass():
     """Engine rising under power, a doppler drop as it passes, air rushing by."""
-    go, out = T['car']['go'], T['car']['out']
-    t0 = T['car']['settle']
+    go, out = T['car']['in'] - 0.1, T['car']['pass'] + 0.1   # loudest as it fills the frame
+    t0 = T['car']['in'] - 0.35
     dur = out - t0 + 0.9
     n = int(dur * SR)
     t = np.arange(n) / SR + t0
@@ -154,7 +155,7 @@ def car_pass():
     amp *= np.clip((t0 + dur - t) / 0.5, 0, 1)
     air = bandpass(rng.standard_normal(n), 500, 5000) * near ** 1.5 * 0.55
     mono = fade(eng * amp + air, 0.02, 0.2)
-    pan = np.clip(0.55 - 1.1 * k, -0.6, 0.6)               # right of frame -> out bottom-left
+    pan = np.clip(0.6 - 1.1 * k, -0.6, 0.6)                # top right of frame -> out bottom-left
     a = (pan + 1) * np.pi / 4
     buf = np.zeros((N, 2))
     i = int(t0 * SR)
@@ -191,17 +192,26 @@ def ball_bounce(f0, f1, tau, noise, dur=0.22, noise_fc=900):
     return fade(body + noise * slap, 0.0008, 0.04)
 
 
+def road_draw(dur):
+    """The loop being laid down: a soft rising brush of air."""
+    n = int(dur * SR)
+    t = np.arange(n) / SR
+    x = bandpass(rng.standard_normal(n), 700, 4200)
+    shape = np.sin(np.pi * t / dur) ** 1.5
+    return fade(x * shape, 0.03, 0.05)
+
+
 def effects():
     e = car_pass()
     tn, so = T['tennis'], T['soccer']
-    sw = swish(tn['hit'] - tn['swing'])
-    place(e, sw, tn['swing'], pan=-0.35, gain=0.16)
-    place(e, racket_hit(), tn['hit'], pan=-0.3, gain=0.62)
-    place(e, ball_bounce(520, 260, 0.03, 0.5, 0.14, 2500), tn['ground'], pan=0.0, gain=0.36)
     thud = lambda: ball_bounce(170, 82, 0.06, 0.55)
-    place(e, thud(), so['land1'], pan=-0.45, gain=0.55)
-    place(e, thud(), so['land2'], pan=-0.45, gain=0.6)
-    place(e, thud(), so['land3'], pan=-0.75, gain=0.5)
+    for at, g in zip(so['bounces'], (0.62, 0.5, 0.3)):
+        place(e, thud(), at, pan=-0.4, gain=g)
+    place(e, swish(tn['hit'] - tn['swing']), tn['swing'], pan=0.45, gain=0.2)
+    place(e, racket_hit(), tn['hit'], pan=0.4, gain=0.66)
+    for at, g in zip(tn['bounces'], (0.4, 0.2)):
+        place(e, ball_bounce(520, 260, 0.03, 0.5, 0.14, 2500), at, pan=0.25, gain=g)
+    place(e, road_draw(T['draw'][1] - T['draw'][0]), T['draw'][0], pan=0.0, gain=0.07)
     dry = e.copy()
     return dry + 0.35 * (reverb(e, 0.5, 0.6) - e)
 

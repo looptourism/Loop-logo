@@ -10,10 +10,9 @@ mkdir -p out/frames build_cache
 [ -f public/audio/loop_sting.wav ] || python3 scripts/make_audio.py
 npx remotion bundle src/index.ts --out-dir build_cache/bundle --log=error
 # one still per beat, name:frame at 60 fps
-BEATS="01_fade_in:18 02_logo_still:36 03_car_anticipation:58 04_car_drive:90 05_car_exit:104 \
-06_racket_windback:141 07_racket_hit:150 08_ball_ground:159 09_ball_flies_out:161 \
-10_soccer_hop_1:198 11_soccer_landing_squash:212 12_soccer_hop_2:227 13_soccer_bounces_out:262 \
-14_props_fade_settle:294 15_hold:375 16_last_frame:419"
+BEATS="01_ball_drops_in:24 02_first_bounce:31 03_second_hop:45 04_serve_toss:76 05_racket_hit:89 \
+06_tennis_bounce:104 07_balls_at_rest:130 08_loop_drawing:152 09_loop_drawn:182 10_car_enters:196 \
+11_car_wipes_logo_on:207 12_car_exits:222 13_tagline:250 14_hold:330 15_last_frame:419"
 for id in ${@:-16x9 9x16 1x1}; do
   rm -rf "build_cache/sub_$id"
   npx tsx scripts/plan.ts "$id" "build_cache/plan_$id.json"

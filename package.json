@@ -4,7 +4,7 @@
   "private": true,
   "description": "7-second animated logo sting for Loop Travel & Tourism (Remotion).",
   "scripts": {
-    "assets": "python3 scripts/prep_assets.py",
+    "assets": "python3 scripts/prep_assets.py && python3 scripts/prep_stencils.py",
     "audio": "python3 scripts/make_audio.py",
     "studio": "remotion studio",
     "check": "tsc --noEmit && tsx scripts/check_motion.ts",
